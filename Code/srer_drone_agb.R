@@ -1,6 +1,7 @@
 library(ggplot2)
 library(ggpubr)
 library(ggh4x)
+library(cowplot)
 
 # Set filepaths
 code.fp = getwd()
@@ -30,127 +31,235 @@ ca.extract = function(ca, year) {
   return(ca.out)
 }
 
-# Extract metrics
-pre.2019.ca = ca.extract(pre.2019[,5],'2019')
-pre.2019.hmean = pre.2019[,7] * 0.3048
-post.2019.ca = ca.extract(post.2019[,5],'2019')
-post.2019.hmean = post.2019[,7] * 0.3048
+# Create function to assign species name to codes
+assign.sp.name = function(sp.codes) {
+  sp.names = vector(mode = 'character', length = length(sp.codes))
+  for (i in 1 : length(sp.codes)) {
+    if (isTRUE(sp.codes[i] == 1)) { sp.names[i] = 'NA' }
+    if (isTRUE(sp.codes[i] == 2)) { sp.names[i] = 'NA' }
+    if (isTRUE(sp.codes[i] == 3)) { sp.names[i] = 'Mesquite' }
+    if (isTRUE(sp.codes[i] == 4)) { sp.names[i] = 'Cactus' }
+    if (isTRUE(sp.codes[i] == 5)) { sp.names[i] = 'Creosote' }
+    if (isTRUE(sp.codes[i] == 6)) { sp.names[i] = 'Lotebush' }
+    if (isTRUE(sp.codes[i] == 7)) { sp.names[i] = 'Palo Verde' }
+    if (isTRUE(is.na(sp.codes[i]))) { sp.names[i] = 'NA' }
+  }
+  return(sp.names)
+}
 
-pre.2023.ca = ca.extract(pre.2023[,5],'2023')
+# Extract metrics and species info
+pre.2019.ca = ca.extract(pre.2019[,5],'2019') * 0.092903 # convert from ft2 to m2
+pre.2019.hmean = pre.2019[,7] * 0.3048 # convert from ft to m
+pre.2019.species = assign.sp.name(pre.2019[,9])
+
+post.2019.ca = ca.extract(post.2019[,5],'2019') * 0.092903
+post.2019.hmean = post.2019[,7] * 0.3048
+post.2019.species = assign.sp.name(post.2019[,9])
+
+pre.2023.ca = ca.extract(pre.2023[,5],'2023') * 0.092903
 pre.2023.hmean = pre.2023[,7] * 0.3048
-post.2023.ca = ca.extract(post.2023[,5],'2023')
+pre.2023.species = assign.sp.name(pre.2023[,9])
+
+post.2023.ca = ca.extract(post.2023[,5],'2023') * 0.092903
 post.2023.hmean = post.2023[,7] * 0.3048
+post.2023.species = assign.sp.name(post.2023[,9])
 
 # Combine as data frame
 df = rbind(data.frame('CrownArea' = pre.2019.ca,
                       'MeanHeight' = pre.2019.hmean,
                       'PrePostMonsoon' = 'PreMonsoon',
-                      'Year' = '2019'),
+                      'Year' = '2019',
+                      'Species' = pre.2019.species),
            data.frame('CrownArea' = post.2019.ca,
                       'MeanHeight' = post.2019.hmean,
                       'PrePostMonsoon' = 'PostMonsoon',
-                      'Year' = '2019'),
+                      'Year' = '2019',
+                      'Species' = post.2019.species),
            data.frame('CrownArea' = pre.2023.ca,
                       'MeanHeight' = pre.2023.hmean,
                       'PrePostMonsoon' = 'PreMonsoon',
-                      'Year' = '2023'),
+                      'Year' = '2023',
+                      'Species' = pre.2023.species),
            data.frame('CrownArea' = post.2023.ca,
                       'MeanHeight' = post.2023.hmean,
                       'PrePostMonsoon' = 'PostMonsoon',
-                      'Year' = '2023'))
+                      'Year' = '2023',
+                      'Species' = post.2023.species))
+
+# Remove outlier values
+remove.outliers = function() {
+  for (i in 1 : nrow(df)) {
+    # Remove height outliers (mean height > 2.5 m)
+    if (isTRUE(df[i,2] < 2.5)) { df[i,2] = df[i,2] }
+    if (isTRUE(df[i,2] > 2.5)) { df[i,2] = NA }
+    # Remove crown area outliers (crown area < 0.929174)
+    if (isTRUE(df[i,1] < 0.929174)) { df[i,1] = NA }
+  }
+  return(df)
+}
+
+df = remove.outliers()
 
 # Remove NA values
 df = na.omit(df)
 
-# Factor pre/post monsoon and years
+# Filter by species
+df = df[df$Species %in% c('Mesquite','Creosote','Palo Verde','Lotebush'),]
+
+# Factor pre/post monsoon, years, and species
 df$PrePostMonsoon = factor(df$PrePostMonsoon, 
                            levels = c('PreMonsoon','PostMonsoon'),
                            labels = c('Pre-Monsoon','Post-Monsoon'))
 
 df$Year = factor(df$Year, levels = c('2019','2023'))
 
+df$Species = factor(df$Species, levels = c('Mesquite','Creosote','Palo Verde','Lotebush'))
+
 # Set facet text colors
 facet.cols = strip_themed(background_x = elem_list_rect(fill = c('darkorange4','forestgreen')),
                           text_x = elem_list_text(color = 'white', face = 'bold'))
 
+# Set species colors
+species.cols = c('green4','tomato','dodgerblue4','darkorange1')
+
 # Plot crown area/height scatterplot relationships
 sp = ggplot(data = df,
-            aes(x = CrownArea, y = MeanHeight, color = PrePostMonsoon)) +
-  geom_point(size = 1, alpha = 0.25, show.legend = FALSE) +
-  scale_color_manual(values = c('darkorange4','forestgreen'), guide = 'none') +
+            aes(x = CrownArea, y = MeanHeight, color = Species)) +
+  geom_point(size = 1, alpha = 0.25, pch = 19) +
+  #scale_color_manual(values = c('darkorange4','forestgreen'), guide = 'none') +
+  scale_color_manual(values = species.cols,
+                     guide = guide_legend(override.aes = list(size = 4, alpha = 1))) +
   stat_smooth(formula = y ~ x, method = 'lm', color = 'red', se = TRUE, na.rm = TRUE) +
   stat_cor(aes(x = CrownArea, y = MeanHeight), 
            method = 'pearson', 
+           label.x.npc = 0.45,
            size = 5.5, na.rm = TRUE) +
   ylab('Mean Height [ m ]') +
   xlab(expression(Crown~Area~'['~m^2~']')) +
   theme_bw() +
-  facet_grid2(Year~PrePostMonsoon, strip = facet.cols, scales = 'free') +
+  facet_grid2(Year~PrePostMonsoon, strip = facet.cols, scales = 'fixed') +
   theme(axis.text = element_text(size = 15),
         axis.title = element_text(size = 15),
         strip.text = element_text(size = 17, face = 'bold'),
         panel.border = element_rect(color = 'black', fill = NA, linewidth = 1),
         strip.background.y = element_rect(fill = 'white', color = 'transparent'),
-        strip.background.x = element_rect(color = 'black'))
-
-sp
+        strip.background.x = element_rect(color = 'black'),
+        legend.position = 'bottom',
+        legend.title = element_blank(),
+        legend.text = element_text(size = 15))
 
 ggsave(file = paste(figs.fp, 'PrePost_2019_2023_CrownArea_vs_HeightMean.png', sep = '/'),
        sp,
-       width = 7, height = 6,
+       width = 9, height = 9,
        bg = 'white')
 
 # Plot box/whisker figures
 df.2 = reshape2::melt(df,
-                      id.vars = c('PrePostMonsoon','Year'),
+                      id.vars = c('PrePostMonsoon','Year','Species'),
                       variable.name = 'Metric',
                       value.name = 'Value')
 
-df.2$Metric = factor(df.2$Metric, 
-                     levels = c('CrownArea','MeanHeight'),
-                     labels = c('Crown Area [ m\u00b2 ]','Mean Height [ m ]'))
-
 get_box_stats = function(y) {
   return(data.frame(
-    y = 1.5,
+    y = 3,
     label = paste(
+      "Max =", round(max(y), 2), "\n",
+      "Min =", round(min(y), 2), "\n",
       "Mean =", round(mean(y), 2), "\n",
       "Median =", round(median(y), 2), "\n",
-      "Max =", round(max(y), 2), "\n",
-      "Min =", round(min(y), 2), "\n"
+      "STD =", round(sd(y), 2), "\n"
     )
   ))
 }
 
-bw = ggplot(data = df.2,
-            aes(x = PrePostMonsoon, y = Value, color = PrePostMonsoon)) +
-  geom_boxplot(show.legend = FALSE) +
-  stat_summary(fun.data = get_box_stats, 
-               geom = "text", 
-               hjust = 0.5, 
-               vjust = c(-1.1,-1.1,
-                         -1.1,-1.1,
-                         -0.5,-0.5,
-                         -1,-1),
-               size = 4.5) +
-  scale_color_manual(values = c('darkorange4','forestgreen'), guide = 'none') +
-  theme_bw() +
-  xlab('') +
-  ylab('') +
-  facet_nested_wrap(~Metric + Year,
-                    nrow = 2,
-                    scales = 'free',
-                    nest_line = element_line()) +
-  theme(axis.text = element_text(size = 15),
-        axis.title = element_text(size = 15),
-        strip.text = element_text(size = 17, face = 'bold'),
-        panel.border = element_rect(color = 'black', fill = NA, linewidth = 1),
-        strip.background.x = element_rect(fill = 'white', color = 'transparent'))
+bw.plot.fun = function() {
+  
+  ca = df.2[df.2$Metric == 'CrownArea',]
+  hmean = df.2[df.2$Metric == 'MeanHeight',]
+  
+  # Crown area
+  bw.ca = ggplot(data = ca,
+                 aes(x = PrePostMonsoon, y = Value, color = Species)) +
+    geom_boxplot(linewidth = 1) +
+    scale_color_manual(values = species.cols,
+                       guide = guide_legend(override.aes = list(size = 0, linewidth = 1))) +
+    stat_summary(fun.data = get_box_stats,
+                 inherit.aes = TRUE,
+                 position = 'identity',
+                 geom = 'text',
+                 hjust = rep(c(1,1,0,0),4),
+                 vjust = rep(c(-2.5,-1.5,-2.5,-1.5),4),
+                 size = 5) +
+    theme_bw() +
+    xlab('') +
+    ylab(expression(Crown~Area~'['~m^2~']')) +
+    facet_grid(~Year,
+               scales = 'fixed') +
+    theme(axis.text = element_text(size = 18),
+          axis.title = element_text(size = 20),
+          strip.text = element_text(size = 25, face = 'bold'),
+          panel.border = element_rect(color = 'black', fill = NA, linewidth = 1),
+          strip.background.x = element_rect(fill = 'white', color = 'transparent'),
+          legend.position = 'bottom',
+          legend.title = element_blank(),
+          legend.text = element_text(size = 20))
+  
+  ggsave(paste(figs.fp, 'CA_PrePostMonsoon_Species_BWP.png', sep = '/'),
+         bw.ca,
+         width = 15, height = 8.5,
+         bg = 'white')
+  
+  # Mean height
+  bw.hmean = ggplot(data = hmean,
+                    aes(x = PrePostMonsoon, y = Value, color = Species)) +
+    geom_boxplot(linewidth = 1) +
+    scale_color_manual(values = species.cols,
+                       guide = guide_legend(override.aes = list(size = 0, linewidth = 1))) +
+    stat_summary(fun.data = get_box_stats,
+                 inherit.aes = TRUE,
+                 position = 'identity',
+                 geom = 'text',
+                 hjust = rep(c(1,1,0,0),4),
+                 vjust = rep(c(0.85,1.85,0.85,1.85),4),
+                 size = 5) +
+    theme_bw() +
+    xlab('') +
+    ylab('Mean Height [ m ]') +
+    facet_grid(~Year,
+               scales = 'fixed') +
+    theme(axis.text = element_text(size = 18),
+          axis.title = element_text(size = 20),
+          strip.text = element_text(size = 25, face = 'bold'),
+          panel.border = element_rect(color = 'black', fill = NA, linewidth = 1),
+          strip.background.x = element_rect(fill = 'white', color = 'transparent'),
+          legend.position = 'bottom',
+          legend.title = element_blank(),
+          legend.text = element_text(size = 20))
+  
+  ggsave(paste(figs.fp, 'HMEAN_PrePostMonsoon_Species_BWP.png', sep = '/'),
+         bw.hmean,
+         width = 15, height = 8.5,
+         bg = 'white')
+  
+  # Combine plots
+  ca.hmean.plot = plot_grid(plotlist = list(bw.ca + theme(legend.position = 'none'),
+                                            bw.hmean),
+                            ncol = 1,
+                            align = 'v',
+                            axis = 't',
+                            labels = c('a)','b)'),
+                            label_size = 20)
+  
+  ggsave(paste(figs.fp, 'CA_HMEAN_PrePostMonsoon_Species_BWP.png', sep = '/'),
+         ca.hmean.plot,
+         width = 16, height = 16,
+         bg = 'white')
+  
+  #return(ca.hmean.plot)
+}
 
-ggsave(file = paste(figs.fp, 'PrePost_2019_2023_CrownArea_&_HeightMean_BWP.png', sep = '/'),
-       bw,
-       width = 10, height = 8,
-       bg = 'white')
+bw.plot.fun()
+
 
 # ------------------------------------------- Compute biomass
 agb.fun = function(hmean, ca) {
@@ -221,4 +330,5 @@ hist.bw.plot.fun = function() {
           strip.background.x = element_rect(fill =, color = 'black'))
   
 }
+
 
