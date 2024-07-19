@@ -103,26 +103,24 @@ df = remove.outliers()
 # Remove NA values
 df = na.omit(df)
 
-# Filter by species
+# Filter by species (exclude cactus and non-identified species)
 df = df[df$Species %in% c('Mesquite','Creosote','Palo Verde','Lotebush'),]
 
 # Factor pre/post monsoon, years, and species
 df$PrePostMonsoon = factor(df$PrePostMonsoon, 
                            levels = c('PreMonsoon','PostMonsoon'),
                            labels = c('Pre-Monsoon','Post-Monsoon'))
-
 df$Year = factor(df$Year, levels = c('2019','2023'))
-
 df$Species = factor(df$Species, levels = c('Mesquite','Creosote','Palo Verde','Lotebush'))
 
-# Set facet text colors
+# Set facet strip colors
 facet.cols = strip_themed(background_x = elem_list_rect(fill = c('darkorange4','forestgreen')),
                           text_x = elem_list_text(color = 'white', face = 'bold'))
 
 # Set species colors
 species.cols = c('green4','tomato','dodgerblue4','darkorange1')
 
-# Plot crown area/height scatterplot relationships
+# ------------------------ Plot crown area/height scatterplot relationships
 sp = ggplot(data = df,
             aes(x = CrownArea, y = MeanHeight, color = Species)) +
   geom_point(size = 1, alpha = 0.25, pch = 19) +
@@ -153,12 +151,15 @@ ggsave(file = paste(figs.fp, 'PrePost_2019_2023_CrownArea_vs_HeightMean.png', se
        width = 9, height = 9,
        bg = 'white')
 
-# Plot box/whisker figures
+# ------------------------ Plot box/whisker figures
+
+# Reshape data frame
 df.2 = reshape2::melt(df,
                       id.vars = c('PrePostMonsoon','Year','Species'),
                       variable.name = 'Metric',
                       value.name = 'Value')
 
+# Create function to extract statistics for box/whisker plots
 get_box_stats = function(y) {
   return(data.frame(
     y = 3,
@@ -172,6 +173,7 @@ get_box_stats = function(y) {
   ))
 }
 
+# Generate box/whisker plots for crown area and mean height, then combine into single figure
 bw.plot.fun = function() {
   
   ca = df.2[df.2$Metric == 'CrownArea',]
@@ -262,11 +264,14 @@ bw.plot.fun()
 
 
 # ------------------------------------------- Compute biomass
-agb.fun = function(hmean, ca) {
+agb.fun = function(year, monsoon.phase) {
+  
+  ca = df.2[df.2$Metric == 'CrownArea' & df.2$Year == year & df.2$PrePostMonsoon == monsoon.phase,5]
+  hmean = df.2[df.2$Metric == 'MeanHeight' & df.2$Year == year & df.2$PrePostMonsoon == monsoon.phase,5]
   
   # Convert height mean (m) and canopy area (m2) to units of cm and cm2, respectively
-  hmean.cm = hmean * 100
-  ca.cm = ca * 10000
+  #hmean = hmean * 100
+  ca = ca * 10000
   
   # Set coefficients
   b0 = -304.77
@@ -279,10 +284,10 @@ agb.fun = function(hmean, ca) {
   return(agb)
 }
 
-pre.2019.agb = agb.fun(pre.2019.hmean, pre.2019.ca)
-post.2019.agb = agb.fun(post.2019.hmean, post.2019.ca)
-pre.2023.agb = agb.fun(pre.2023.hmean, pre.2023.ca)
-post.2023.agb = agb.fun(post.2023.hmean, post.2023.ca)
+pre.2019.agb = agb.fun('2019','Pre-Monsoon')
+post.2019.agb = agb.fun('2019','Post-Monsoon')
+pre.2023.agb = agb.fun('2023','Pre-Monsoon')
+post.2023.agb = agb.fun('2023','Post-Monsoon')
 
 # Create AGB data frame
 agb.df = rbind(data.frame('AGB' = pre.2019.agb,
